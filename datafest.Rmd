@@ -1,0 +1,253 @@
+---
+title: "DataFest"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-03-01"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyr)
+library(dplyr)
+library(tidyverse)
+```
+
+## R Markdown
+
+```{r}
+head(checkpoints)
+checkpoints_clean <- drop_na(checkpoints)
+aggregate(checkpoints_clean$response, list(checkpoints_clean$construct), mean)
+checkpoints_cost <- checkpoints_clean[checkpoints_clean$construct == "Cost",]
+checkpoints_expec <- checkpoints_clean[checkpoints_clean$construct == "Expectancy",]
+checkpoints_iv <- checkpoints_clean[checkpoints_clean$construct == "Intrinsic Value",]
+checkpoints_uv <- checkpoints_clean[checkpoints_clean$construct == "Utility Value",]
+
+summary(lm(EOC~response, data=checkpoints_cost))
+summary(lm(EOC~response, data=checkpoints_expec))
+summary(lm(EOC~response, data=checkpoints_iv))
+summary(lm(EOC~response, data=checkpoints_uv))
+#lot(x="reponse", y="EOC", data=checkpoints_cost, xlim=(0,5))
+```
+```{r}
+
+page_views_clean <- page_views[!is.na(page_views$engaged),]
+responses_clean <- drop_na(responses[,-c(20:24,26:40)])
+a <- aggregate(responses_clean$points_earned, list(responses_clean$student_id), mean)
+a <- data.frame(student_id = a[,1], percentage_correct = a[,2] )
+b <- aggregate(page_views_clean[,"dt_accessed"], list(page_views_clean$student_id), range)
+b <- data.frame(student_id = b[,1], start_time = b[,2][,1], end_time = b[,2][,2])
+c <- data.frame(merge(a,b, "student_id"))
+c$total_time <- (c$end_time - c$start_time)/86400
+c$start_time <- NULL
+c$end_time <- NULL
+e <- aggregate(page_views_clean[,"engaged"], page_views_clean[,"student_id"], mean)
+e <- data.frame("student_id"= e[,1], "avg_engagement" = e[,2])
+c <- merge(c,e, "student_id")
+c <- merge(c, page_views[,c("student_id", "book")], "student_id")
+c <- distinct(c)
+c <- distinct(merge(c, page_views_clean[,c("student_id", "institution_id")], "student_id"))
+page_views_clean$off_page_total <- page_views_clean$off_page_brief + page_views_clean$off_page_long
+page_views_clean$idle_total <- page_views_clean$idle_brief + page_views_clean$idle_long
+page_views_clean$percent_off_page <- page_views_clean$off_page_total/(page_views_clean$off_page_total+page_views_clean$engaged+page_views_clean$idle_total)
+f <- aggregate(page_views_clean$percent_off_page, list(page_views_clean$student_id), mean)
+f <- data.frame("student_id" = f[,1], "percent_off_page" = f[,2])
+c <- merge(c, f, "student_id")
+c$institution_id <- as.factor(c$institution_id)
+c$book <- as.factor(c$book)
+g <- aggregate(page_views_clean$was_complete, list(page_views_clean$student_id), mean)
+g <- data.frame("student_id" = g[,1], "pct_return_to_page" = g[,2])
+c <- merge(c, g, "student_id")
+
+h <- aggregate(page_views_clean$tried_again_clicks, list(page_views_clean$student_id), mean)
+h <- data.frame("student_id" = h[,1], "avg_retries" = h[,2])
+c <- merge(c, h, "student_id")
+
+i <- aggregate(drop_na(checkpoints)$EOC, list(drop_na(checkpoints)$student_id), mean)
+i <- data.frame("student_id" = i[,1], "avg_EOC" = i[,2])
+c <- merge(c, i, "student_id")
+
+
+plot(c$percentage_correct, c$avg_EOC)
+
+ggplot(c, aes(x=percentage_correct, y=avg_EOC, color=engagement_level)) +
+  geom_point(size=2) +
+  geom_vline(xintercept=means[1,2], color="red") +
+  geom_vline(xintercept=means[2,2], color="chartreuse4") +
+  geom_vline(xintercept=means[3,2], color="blue") +
+  ggtitle("Engagement vs Student Accuracy") +
+  xlab("Chapter percentage correct") +
+  ylab("End-of-chapter percentage correct")
+  
+abline(lm2)
+lm1 <- summary(lm(avg_engagement/60000~avg_retries, data=c[c$avg_retries != 0,]))
+lm2 <- summary(lm(percentage_correct~avg_EOC, data=c))
+lm2
+
+hist(c$avg_engagement, breaks=50)
+engagement_level = rep("blah", length(c$student_id))
+for (i in 1:length(c$student_id)) {
+  if (c$avg_engagement[i] < 166685.1){
+  engagement_level[i] <- "low"
+  }
+  else if (c$avg_engagement[i] > 496703.2 ) {
+  engagement_level[i] <- "high"  
+  }
+  else {
+  engagement_level[i] <- "average"  
+  }
+}
+c$engagement_level <- as.factor(engagement_level)
+quantile(c$avg_engagement, c(.10,.50,.90))
+
+apply(c$percent_off_page, c$engagement_level, mean)
+c <- drop_na(c)
+means <- aggregate(c$percentage_correct, list(c$engagement_level), mean)
+
+t.test(c[engagement_level == "high", "percentage_correct"], c[engagement_level == "average", "percentage_correct"])
+
+t.test(c[engagement_level == "low", "percentage_correct"], c[engagement_level == "average", "percentage_correct"])
+
+geom_bar(aes(x=c("mcq", "assoc", "choice matrix"), y=c(mean())))
+
+
+
+```
+
+
+```{r}
+
+c <- drop_na(c)
+
+c.abc <- c[c$book == "College / Statistics and Data Science (ABC)",]
+c.abcd <- c[c$book == "College / Advanced Statistics and Data Science (ABCD)",]
+
+
+
+pca.abc <- prcomp(c.abc[,-c(1,5,6,10,11,12,13)], scale=TRUE)
+pca.abcd <- prcomp(c.abcd[,-c(1,5,6,10,11,12,13)], scale=TRUE)
+pca_scores.abc <- pca.abc$x # PCs/ PC scores 
+pca_scores.abcd <- pca.abcd$x
+
+
+low_dim_rep.abc <- pca_scores.abc %>% 
+  data.frame() %>% 
+  mutate(student= c.abc$student_id) %>% 
+  mutate(Best= c.abc$Best) %>%
+  select(student, everything())
+low_dim_rep.abcd <- pca_scores.abcd %>% 
+  data.frame() %>% 
+  mutate(student= c.abcd$student_id) %>% 
+  mutate(Best= c.abcd$Best) %>%
+  select(student, everything())
+
+
+ggplot(low_dim_rep.abc, aes(x = PC1, y = PC2, color=Best)) +
+  geom_point()
+  theme_linedraw()
+  
+ggplot(c.abc, aes(x = avg_engagement, y=percentage_correct, color=Best)) +
+geom_point()
+  
+ggplot(c.abcd, aes(x = avg_engagement, y=percentage_correct, color=Best)) +
+geom_point()
+
+
+
+
+```
+
+```{r}
+responses_mcq <- responses_clean[responses_clean$lrn_type == "mcq",]
+avg_mcq <- aggregate(responses_mcq$points_earned, list(responses_mcq$student_id), mean)
+avg_mcq <- data.frame("student_id" = avg_mcq[,1], "percentage_correct_mcq" = avg_mcq[,2])
+c <- merge(c, avg_mcq, "student_id")
+c$good_at_mcq <- ifelse(c[,"percentage_correct_mcq"] > quantile(avg_mcq[,2], .9), TRUE, FALSE)       
+
+c <- NULL
+
+
+plot(avg_assoc$percentage_correct_assoc, c$avg_engagement)
+```
+```{r}
+responses_assoc <- responses_clean[responses_clean$lrn_type == "association",]
+avg_assoc <- aggregate(responses_assoc$points_earned, list(responses_assoc$student_id), mean)
+avg_assoc <- data.frame("student_id" = avg_assoc[,1], "percentage_correct_assoc" = avg_assoc[,2])
+c <- merge(c, avg_assoc, "student_id")
+c$good_at_assoc <- ifelse(c[,"percentage_correct_assoc"] > quantile(avg_assoc[,2], .9), TRUE, FALSE)
+```
+```{r}
+table(responses$lrn_type)
+responses_mcq <- responses_clean[responses_clean$lrn_type == "mcq",]
+avg_mcq <- aggregate(responses_mcq$points_earned, list(responses_mcq$student_id), mean)
+avg_mcq <- data.frame("student_id" = avg_mcq[,1], "percentage_correct_mcq" = avg_mcq[,2])
+
+responses_assoc <- responses_clean[responses_clean$lrn_type == "association",]
+avg_assoc <- aggregate(responses_assoc$points_earned, list(responses_assoc$student_id), mean)
+avg_assoc <- data.frame("student_id" = avg_assoc[,1], "percentage_correct_assoc" = avg_assoc[,2])
+
+responses_cm <- responses_clean[responses_clean$lrn_type == "choicematrix",]
+avg_cm <- aggregate(responses_cm$points_earned, list(responses_cm$student_id), mean)
+avg_cm <- data.frame("student_id" = avg_cm[,1], "percentage_correct_cm" = avg_cm[,2])
+
+responses_clzassoc <- responses_clean[responses_clean$lrn_type == "association",]
+avg_clzassoc <- aggregate(responses_clzassoc$points_earned, list(responses_clzassoc$student_id), mean)
+avg_clzassoc <- data.frame("student_id" = avg_clzassoc[,1], "percentage_correct_clzassoc" = avg_clzassoc[,2])
+
+responses_imgclzassoc <- responses_clean[responses_clean$lrn_type == "imageclozeassociation",]
+avg_imgclzassoc <- aggregate(responses_imgclzassoc$points_earned, list(responses_imgclzassoc$student_id), mean)
+avg_imgclzassoc <- data.frame("student_id" = avg_imgclzassoc[,1], "percentage_correct_imgclzassoc" = avg_imgclzassoc[,2])
+
+responses_plaintext <- responses_clean[responses_clean$lrn_type == "plaintext",]
+avg_plaintext <- aggregate(responses_plaintext$points_earned, list(responses_plaintext$student_id), mean)
+avg_plaintext <- data.frame("student_id" = avg_plaintext[,1], "percentage_correct_plaintext" = avg_plaintext[,2])
+
+responses_shorttext <- responses_clean[responses_clean$lrn_type == "shorttext",]
+avg_shorttext <- aggregate(responses_shorttext$points_earned, list(responses_shorttext$student_id), mean)
+avg_shorttext <- data.frame("student_id" = avg_shorttext[,1], "percentage_correct_shorttext" = avg_shorttext[,2])
+
+responses_sortlist <- responses_clean[responses_clean$lrn_type == "sortlist",]
+avg_sortlist <- aggregate(responses_sortlist$points_earned, list(responses_sortlist$student_id), mean)
+avg_sortlist <- data.frame("student_id" = avg_sortlist[,1], "percentage_correct_sortlist" = avg_sortlist[,2])
+
+
+```
+
+```{r}
+mcq_z <-data.frame("student_id" = avg_mcq[,1], mcq_z_score =  (avg_mcq[,2]-mean(avg_mcq[,2]))/sd(avg_mcq[,2]) )
+
+assoc_z <- data.frame("student_id" = avg_assoc[,1], assoc_z_score =  (avg_assoc[,2]-mean(avg_assoc[,2]))/sd(avg_assoc[,2]) )
+
+cm_z <-data.frame("student_id" = avg_cm[,1], cm_z_score =  (avg_cm[,2]-mean(avg_cm[,2]))/sd(avg_cm[,2]) )
+
+sortlist_z <- data.frame("student_id" = avg_sortlist[,1], sortlist_z_score =  (avg_sortlist[,2]-mean(avg_sortlist[,2]))/sd(avg_sortlist[,2]))
+
+
+```
+
+
+```{r}
+c <- merge(c, mcq_z, "student_id")
+c <- merge(c, assoc_z, "student_id")
+c <- merge(c, cm_z, "student_id")
+c$plaintext_z_score <- NULL
+best = vector(mode='list', length=length(c$student_id))
+
+for (i in 1:length(c$student_id)){
+  if (names(which.max(c[i,c(10,11,12)])) == "cm_z_score"){
+    best[[i]] <- "Choice Matrix"
+  }
+  else if (names(which.max(c[i,c(10,11,12)])) == "mcq_z_score"){
+    best[[i]]  <- "Multiple Choice"
+  }
+  else if (names(which.max(c[i,c(10,11,12)])) == "assoc_z_score"){
+    best[[i]]  <- "Association"
+  }
+}
+c$Best <- unlist(best)
+names[2]
+
+```
+
+
